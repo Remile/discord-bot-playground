@@ -6,7 +6,7 @@ async function runTest() {
   const events = [];
   
   const client = new OpenCodeClient({
-    workingDir: '/home/better/dev/repo/discord-bot-playground',
+    workingDir: process.cwd(),
     onEvent: (event) => {
       events.push(event);
       switch (event.type) {

@@ -1,4 +1,4 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { Writable, Readable } = require('stream');
 
 async function loadSDK() {
@@ -22,7 +22,15 @@ class OpenCodeClient {
   async connect() {
     const { PROTOCOL_VERSION, ClientSideConnection, ndJsonStream } = await loadSDK();
     
-    this.process = spawn('opencode', ['acp'], {
+    // Find opencode from PATH in current terminal environment
+    let opencodePath;
+    try {
+      opencodePath = execSync('which opencode', { encoding: 'utf8', env: process.env }).trim();
+    } catch (e) {
+      opencodePath = 'opencode'; // fallback
+    }
+    
+    this.process = spawn(opencodePath, ['acp'], {
       cwd: this.workingDir,
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -40,6 +48,10 @@ class OpenCodeClient {
     this.process.stderr.on('data', (data) => {
       const msg = data.toString();
       if (msg.includes('Error')) console.error('[OpenCode stderr]', msg.substring(0, 200));
+    });
+
+    this.process.on('error', (err) => {
+      console.error('[OpenCode process error]', err.message);
     });
 
     const initResult = await this.connection.initialize({
