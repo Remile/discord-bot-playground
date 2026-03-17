@@ -11,6 +11,10 @@ module.exports = {
     .setDescription('在指定目录启动 OpenCode'),
 
   async execute(interaction) {
+    // 先 defer 回复，防止超时
+    await interaction.deferReply({ ephemeral: true });
+
+    // 检查冷却时间
     // 检查冷却时间
     const userId = interaction.user.id;
     const now = Date.now();
@@ -20,7 +24,8 @@ module.exports = {
       const expirationTime = cooldowns.get(cooldownKey) + COOLDOWN_SECONDS * 1000;
       if (now < expirationTime) {
         const remaining = Math.ceil((expirationTime - now) / 1000);
-        return interaction.reply({
+        return interaction.editReply({
+          content: `⏳ 请等待 ${remaining} 秒后再使用此命令`,
           content: `⏳ 请等待 ${remaining} 秒后再使用此命令`,
           ephemeral: true,
         });
@@ -30,7 +35,8 @@ module.exports = {
     // 检查工作区配置
     const workspaceDir = process.env.WORKSPACE_DIR;
     if (!workspaceDir) {
-      return interaction.reply({
+      return interaction.editReply({
+        content: '❌ 错误: WORKSPACE_DIR 环境变量未配置',
         content: '❌ 错误: WORKSPACE_DIR 环境变量未配置',
         ephemeral: true,
       });
@@ -40,7 +46,8 @@ module.exports = {
     const folders = scanSubfolders(workspaceDir);
     
     if (folders.length === 0) {
-      return interaction.reply({
+      return interaction.editReply({
+        content: '❌ 工作区中没有可用的子文件夹',
         content: '❌ 工作区中没有可用的子文件夹',
         ephemeral: true,
       });
@@ -67,7 +74,8 @@ module.exports = {
     // 存储文件夹信息以便后续使用
     interaction.client.opencodeFolders = displayFolders;
 
-    await interaction.reply({
+    await interaction.editReply({
+      content: '📁 请选择一个工作目录：',
       content: '📁 请选择一个工作目录：',
       components: [row],
       ephemeral: true,

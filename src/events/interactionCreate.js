@@ -128,9 +128,9 @@ ${prompt}
       content: `✅ 任务已创建: ${thread}`,
     });
 
-    // 发送 ACP 请求
+    // 发送 ACP 请求并获取结果
     const acpClient = new ACPClient();
-    const { taskId } = await acpClient.sendTask({
+    const { taskId, response } = await acpClient.sendTask({
       workingDir: selectedFolder.path,
       prompt: prompt,
       metadata: {
@@ -142,53 +142,23 @@ ${prompt}
       },
     });
 
-    // 更新状态为已发送
-    await initialMessage.edit({
-      content: `🚀 **OpenCode 任务已启动**
+    // 更新状态为已完成
+    if (response.status === 'success') {
+      await thread.send({
+        content: `✅ **OpenCode 回复**:
 
-📁 **工作目录**: \`${selectedFolder.name}\`
-💬 **Prompt**:
-\`\`\`
-${prompt}
-\`\`\`
-⏳ **状态**: 已发送到 OpenCode，等待处理...
-🆔 **任务ID**: \`${taskId}\`
-
-⏱️ 预计耗时: 几秒到分钟`,
-    });
-
-    // 注册 ACP 回调处理器
-    if (interaction.client.acpServer) {
-      interaction.client.acpServer.registerResultHandler(taskId, async ({ status, result, error }) => {
-        try {
-          if (status === 'success') {
-            await thread.send({
-              content: `✅ **OpenCode 回复**:
-
-${result.output || '无输出'}
+${response.result.output || '无输出'}
 
 ---
 💡 你可以在这个 Thread 中继续追问`,
-            });
-          } else {
-            await thread.send({
-              content: `❌ **OpenCode 处理失败**:
-
-错误信息: ${error?.message || '未知错误'}
-
-请检查配置或稍后重试。`,
-            });
-          }
-        } catch (err) {
-          console.error('[OpenCode] 发送结果到 Discord 失败:', err);
-        }
       });
     } else {
-      console.warn('[OpenCode] ACP Server 未启动，无法接收回调');
       await thread.send({
-        content: `⚠️ **警告**: ACP Server 未启动，无法自动接收结果。
+        content: `❌ **OpenCode 处理失败**:
 
-请确保 bot 配置正确。`,
+错误信息: ${response.error?.message || '未知错误'}
+
+请检查配置或稍后重试。`,
       });
     }
 

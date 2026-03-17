@@ -19,17 +19,25 @@ class ACPClient {
    * @param {string} params.workingDir - 工作目录
    * @param {string} params.prompt - 用户输入的 prompt
    * @param {Object} params.metadata - 元数据
-   * @returns {Promise<{taskId: string}>} 任务ID
+   * @returns {Promise<{taskId: string, response: Object}>} 任务ID和响应
    */
   async sendTask({ workingDir, prompt, metadata }) {
     const taskId = generateId();
     
     console.log(`[ACP] 任务: ${taskId}`);
     
+    // 收集消息内容
+    const messages = [];
+    
     const client = new OpenCodeClient({
       workingDir,
       onEvent: (event) => {
         console.log(`[Event] ${event.type}:`, event.content?.substring(0, 50));
+        
+        // 收集消息类型的内容
+        if (event.type === 'message' && event.content) {
+          messages.push(event.content);
+        }
       },
     });
 
@@ -37,11 +45,19 @@ class ACPClient {
       await client.connect();
       const result = await client.sendPrompt(prompt);
       
+      // 等待一小段时间确保所有消息事件都被处理
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 返回最终结果 - 优先使用 messages 数组，否则用 result
+      const finalOutput = messages.join('') || result?.output || result?.content || '无输出';
+      
+      console.log(`[ACP] 最终输出:`, finalOutput.substring(0, 100));
+      
       return {
         taskId,
         response: {
           status: 'success',
-          result,
+          result: { ...result, output: finalOutput },
         },
       };
     } finally {
