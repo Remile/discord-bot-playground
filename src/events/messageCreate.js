@@ -1,5 +1,4 @@
 const { SessionManager } = require('../utils/sessionManager');
-const { ACPClient } = require('../acp/client');
 
 const name = 'messageCreate';
 const cooldowns = new Map();
@@ -32,43 +31,84 @@ async function execute(message) {
   }
   
   console.log(`[messageCreate] 处理 Thread 回复: ${message.content.substring(0, 50)}`);
+  console.log(`[messageCreate] 复用现有 session: ${session.sessionId}`);
   
   try {
     await message.channel.sendTyping();
     
-    // Use streaming for thread replies too
-    const acpClient = new ACPClient();
-    await acpClient.sendTaskStreaming({
-      workingDir: session.workingDir,
-      prompt: message.content,
-      onThinking: async (content) => {
-        await message.channel.send({
-          content: `💭\n\`\`\`\n${content}\n\`\`\``, 
-        }).catch(err => console.error('[messageCreate] 发送思考内容失败:', err.message));
-      },
-      onComplete: async (result) => {
-        console.log('[messageCreate] onComplete 被调用, output 长度:', result.output?.length);
+    // 直接使用现有的 client，不创建新的 session
+    const client = session.client;
+    
+    // 设置临时事件处理器来捕获流式输出
+    const messages = [];
+    let thinkingBuffer = [];
+    let thinkingTimer = null;
+    const THINKING_INTERVAL = 2000;
+    
+    const flushThinking = async () => {
+      if (thinkingBuffer.length > 0) {
+        const content = thinkingBuffer.join('');
+        thinkingBuffer = [];
         try {
-          await message.reply({
-            content: result?.output || '无输出'
+          await message.channel.send({
+            content: `💭\n\`\`\`\n${content}\n\`\`\``, 
           });
-          console.log('[messageCreate] 最终回复发送成功');
-          
-          // Update session with new client
-          SessionManager.create(message.channel.id, session.workingDir, result.sessionId, result.client);
         } catch (err) {
-          console.error('[messageCreate] 发送最终回复失败:', err.message);
-          await message.reply('❌ 发送回复失败');
+          console.error('[messageCreate] 发送思考内容失败:', err.message);
         }
-      },
-      onError: async (error) => {
-        console.error('[messageCreate] OpenCode 错误:', error);
-        await message.reply('❌ 处理失败: ' + (error.message || '未知错误'));
-      },
-    });
+      }
+    };
+    
+    // 临时替换 onEvent 处理器
+    const originalOnEvent = client.onEvent;
+    client.onEvent = (event) => {
+      console.log(`[Thread Streaming] ${event.type}:`, event.content?.substring(0, 50));
+      
+      if (event.type === 'thinking' && event.content) {
+        thinkingBuffer.push(event.content);
+        if (!thinkingTimer) {
+          thinkingTimer = setTimeout(async () => {
+            await flushThinking();
+            thinkingTimer = null;
+          }, THINKING_INTERVAL);
+        }
+      }
+      
+      if (event.type === 'message' && event.content) {
+        messages.push(event.content);
+      }
+      
+      // 也调用原始的处理器（如果有）
+      if (originalOnEvent) {
+        originalOnEvent(event);
+      }
+    };
+    
+    // 使用现有的 session 发送 prompt
+    const result = await client.sendPrompt(message.content);
+    
+    // 等待事件处理完成
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 刷新剩余的思考内容
+    if (thinkingTimer) {
+      clearTimeout(thinkingTimer);
+      await flushThinking();
+    }
+    
+    // 恢复原始事件处理器
+    client.onEvent = originalOnEvent;
+    
+    const output = messages.join('') || result?.output || result?.content || '无输出';
+    console.log('[messageCreate] 最终输出长度:', output.length);
+    
+    // 发送最终回复
+    await message.reply({ content: output });
+    console.log('[messageCreate] 回复发送成功');
+    
   } catch (error) {
     console.error('[messageCreate] 处理失败:', error);
-    await message.reply('❌ 处理失败');
+    await message.reply('❌ 处理失败: ' + (error.message || '未知错误'));
   }
 }
 
