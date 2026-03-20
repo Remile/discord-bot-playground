@@ -31,7 +31,7 @@ async function execute(message) {
   }
   
   console.log(`[messageCreate] 处理 Thread 回复: ${message.content.substring(0, 50)}`);
-  console.log(`[messageCreate] 复用现有 session: ${session.sessionId}`);
+  console.log(`[messageCreate] 复用现有 session: ${session.client?.sessionId || 'unknown'}`);
   
   try {
     await message.channel.sendTyping();
@@ -61,7 +61,7 @@ async function execute(message) {
     
     // 临时替换 onEvent 处理器
     const originalOnEvent = client.onEvent;
-    client.onEvent = (event) => {
+    client.setOnEvent((event) => {
       console.log(`[Thread Streaming] ${event.type}:`, event.content?.substring(0, 50));
       
       if (event.type === 'thinking' && event.content) {
@@ -75,6 +75,7 @@ async function execute(message) {
       }
       
       if (event.type === 'message' && event.content) {
+        console.log(`[Thread Streaming] 收集 message chunk, 当前共 ${messages.length} 个`);
         messages.push(event.content);
       }
       
@@ -82,7 +83,7 @@ async function execute(message) {
       if (originalOnEvent) {
         originalOnEvent(event);
       }
-    };
+    });
     
     // 使用现有的 session 发送 prompt
     const result = await client.sendPrompt(message.content);
@@ -97,8 +98,10 @@ async function execute(message) {
     }
     
     // 恢复原始事件处理器
-    client.onEvent = originalOnEvent;
+    client.setOnEvent(originalOnEvent);
     
+    console.log(`[messageCreate] messages 数组长度: ${messages.length}`);
+    console.log(`[messageCreate] result:`, result);
     const output = messages.join('') || result?.output || result?.content || '无输出';
     console.log('[messageCreate] 最终输出长度:', output.length);
     

@@ -42,8 +42,8 @@ class OpenCodeClient {
     const output = Readable.toWeb(this.process.stdout);
     const stream = ndJsonStream(input, output);
 
-    const eventHandler = new EventHandler(this.onEvent);
-    this.connection = new ClientSideConnection(() => eventHandler, stream);
+    this.eventHandler = new EventHandler(this.onEvent);
+    this.connection = new ClientSideConnection(() => this.eventHandler, stream);
 
     this.process.stderr.on('data', (data) => {
       const msg = data.toString();
@@ -85,6 +85,10 @@ class OpenCodeClient {
     });
 
     return result;
+  }
+  setOnEvent(onEvent) {
+    this.onEvent = onEvent;
+    this.eventHandler.onEvent = onEvent;
   }
 
   disconnect() {
