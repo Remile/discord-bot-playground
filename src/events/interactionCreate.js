@@ -134,19 +134,32 @@ ${prompt}
     await acpClient.sendTaskStreaming({
       workingDir: selectedFolder.path,
       prompt: prompt,
-      onThinking: (content) => {
+      onThinking: async (content) => {
         // 发送思考内容到 thread
         thread.send({
           content: `💭\n\`\`\`\n${content}\n\`\`\``, 
         }).catch(err => console.error('[OpenCode] 发送思考内容失败:', err.message));
       },
-      onComplete: (result) => {
+      onComplete: async (result) => {
+        console.log('[OpenCode] onComplete 被调用, output 长度:', result.output?.length);
         // 发送最终回复
-        thread.send({
+        try {
+          await thread.send({
           content: `✅ **OpenCode 回复**:\n${result.output}\n\n---\n💡 你可以在这个 Thread 中继续追问`,
-        }).catch(err => console.error('[OpenCode] 发送最终回复失败:', err.message));
+          });
+          console.log('[OpenCode] 最终回复发送成功');
+        } catch (err) {
+          console.error('[OpenCode] 发送最终回复失败:', err.message);
+        }
+        
         
         // 保存 session
+        try {
+          SessionManager.create(thread.id, selectedFolder.path, result.sessionId, result.client);
+          console.log('[OpenCode] Session 已保存:', thread.id);
+        } catch (err) {
+          console.error('[OpenCode] 保存 session 失败:', err.message);
+        }
         SessionManager.create(thread.id, selectedFolder.path, result.sessionId, result.client);
       },
       onError: (error) => {

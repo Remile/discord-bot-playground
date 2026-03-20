@@ -72,21 +72,31 @@ class ACPClient {
     }
   }
 
-
   /**
-   * 发送流式任务到 OpenCode
+   * 流式发送任务到 OpenCode
    * @param {Object} params - 任务参数
    * @param {string} params.workingDir - 工作目录
    * @param {string} params.prompt - 用户输入的 prompt
-   * @param {Function} params.onThinking - 思考内容回调 (content) => void
-   * @param {Function} params.onMessage - 消息内容回调 (content) => void
-   * @param {Function} params.onComplete - 完成回调 (result) => void, result = {output, sessionId, client}
-   * @param {Function} params.onError - 错误回调 (error) => void
+   * @param {Function} params.onThinking - 思考内容回调
+   * @param {Function} params.onMessage - 消息内容回调
+   * @param {Function} params.onComplete - 完成回调
+   * @param {Function} params.onError - 错误回调
    * @returns {Promise<void>}
    */
   async sendTaskStreaming({ workingDir, prompt, onThinking, onMessage, onComplete, onError }) {
     const messages = [];
     let sessionId = null;
+    let thinkingBuffer = [];
+    let thinkingTimer = null;
+    const THINKING_INTERVAL = 2000; // 2 seconds
+
+    const flushThinking = async () => {
+      if (thinkingBuffer.length > 0 && onThinking) {
+        const content = thinkingBuffer.join('');
+        thinkingBuffer = [];
+        await onThinking(content);
+      }
+    };
 
     const client = new OpenCodeClient({
       workingDir,
@@ -94,7 +104,13 @@ class ACPClient {
         console.log(`[Streaming Event] ${event.type}:`, event.content?.substring(0, 50));
 
         if (event.type === 'thinking' && event.content && onThinking) {
-          onThinking(event.content);
+          thinkingBuffer.push(event.content);
+          if (!thinkingTimer) {
+            thinkingTimer = setTimeout(async () => {
+              await flushThinking();
+              thinkingTimer = null;
+            }, THINKING_INTERVAL);
+          }
         }
 
         if (event.type === 'message' && event.content) {
@@ -114,12 +130,20 @@ class ACPClient {
       await client.connect();
       const result = await client.sendPrompt(prompt);
       
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Wait longer for all events to arrive
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Flush any remaining thinking content
+      if (thinkingTimer) {
+        clearTimeout(thinkingTimer);
+        await flushThinking();
+      }
 
       const output = messages.join('') || result?.output || result?.content || '';
       this.sessionId = sessionId || result?.sessionId;
 
       console.log(`[ACP Streaming] 最终输出:`, output.substring(0, 100));
+      console.log(`[ACP Streaming] 调用 onComplete，output 长度:`, output.length);
 
       if (onComplete) {
         onComplete({
