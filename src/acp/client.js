@@ -28,6 +28,7 @@ class ACPClient {
     
     // 收集消息内容
     const messages = [];
+    const thinkingParts = [];
     
     const client = new OpenCodeClient({
       workingDir,
@@ -37,6 +38,11 @@ class ACPClient {
         // 收集消息类型的内容
         if (event.type === 'message' && event.content) {
           messages.push(event.content);
+        }
+        
+        // 收集思考类型的内容
+        if (event.type === 'thinking' && event.content) {
+          thinkingParts.push(event.content);
         }
       },
     });
@@ -50,6 +56,7 @@ class ACPClient {
       
       // 返回最终结果 - 优先使用 messages 数组，否则用 result
       const finalOutput = messages.join('') || result?.output || result?.content || '无输出';
+      const finalThinking = thinkingParts.join('');
       
       console.log(`[ACP] 最终输出:`, finalOutput.substring(0, 100));
       
@@ -57,7 +64,7 @@ class ACPClient {
         taskId,
         response: {
           status: 'success',
-          result: { ...result, output: finalOutput },
+          result: { ...result, output: finalOutput, thinking: finalThinking },
         },
       };
     } finally {
