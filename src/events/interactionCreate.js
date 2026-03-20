@@ -142,8 +142,29 @@ ${prompt}
       },
     });
 
+    // 提取思考内容
+    const thinking = response.result?.thinking || '';
+
+    // 截断过长的思考内容
+    const MAX_THINKING_LENGTH = 1500;
+    let displayThinking = thinking;
+    if (thinking.length > MAX_THINKING_LENGTH) {
+      displayThinking = thinking.substring(0, MAX_THINKING_LENGTH) + '\n\n（思考过程过长，已截断显示）';
+    }
+
     // 更新状态为已完成
     if (response.status === 'success') {
+      // 先发送思考内容
+      if (displayThinking) {
+        // 将思考内容转换为引用格式（每行前面加 >）
+        const quotedThinking = displayThinking.split('\n').map(line => `> ${line}`).join('\n');
+        
+        await thread.send({
+          content: `💭 **思考过程**\n\`\`\`\n${quotedThinking}\n\`\`\``,
+        });
+      }
+
+      // 然后发送正式回复
       await thread.send({
         content: `✅ **OpenCode 回复**:
 
