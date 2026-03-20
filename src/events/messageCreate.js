@@ -1,4 +1,5 @@
 const { SessionManager } = require('../utils/sessionManager');
+const { ACPClient } = require('../acp/client');
 
 const name = 'messageCreate';
 const cooldowns = new Map();
@@ -23,18 +24,50 @@ async function execute(message) {
   }
   cooldowns.set(userId, now);
   
-  // Get session and continue conversation
+  // Get session
   const session = SessionManager.get(message.channel.id);
   if (!session || !session.client) {
     await message.reply('❌ Session 已过期');
     return;
   }
   
+  console.log(`[messageCreate] 处理 Thread 回复: ${message.content.substring(0, 50)}`);
+  
   try {
     await message.channel.sendTyping();
-    const result = await session.client.sendPrompt(message.content);
-    await message.reply(result?.output || '无输出');
+    
+    // Use streaming for thread replies too
+    const acpClient = new ACPClient();
+    await acpClient.sendTaskStreaming({
+      workingDir: session.workingDir,
+      prompt: message.content,
+      onThinking: async (content) => {
+        await message.channel.send({
+          content: `💭\n\`\`\`\n${content}\n\`\`\``, 
+        }).catch(err => console.error('[messageCreate] 发送思考内容失败:', err.message));
+      },
+      onComplete: async (result) => {
+        console.log('[messageCreate] onComplete 被调用, output 长度:', result.output?.length);
+        try {
+          await message.reply({
+            content: result?.output || '无输出'
+          });
+          console.log('[messageCreate] 最终回复发送成功');
+          
+          // Update session with new client
+          SessionManager.create(message.channel.id, session.workingDir, result.sessionId, result.client);
+        } catch (err) {
+          console.error('[messageCreate] 发送最终回复失败:', err.message);
+          await message.reply('❌ 发送回复失败');
+        }
+      },
+      onError: async (error) => {
+        console.error('[messageCreate] OpenCode 错误:', error);
+        await message.reply('❌ 处理失败: ' + (error.message || '未知错误'));
+      },
+    });
   } catch (error) {
+    console.error('[messageCreate] 处理失败:', error);
     await message.reply('❌ 处理失败');
   }
 }
