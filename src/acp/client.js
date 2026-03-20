@@ -72,6 +72,72 @@ class ACPClient {
     }
   }
 
+
+  /**
+   * 发送流式任务到 OpenCode
+   * @param {Object} params - 任务参数
+   * @param {string} params.workingDir - 工作目录
+   * @param {string} params.prompt - 用户输入的 prompt
+   * @param {Function} params.onThinking - 思考内容回调 (content) => void
+   * @param {Function} params.onMessage - 消息内容回调 (content) => void
+   * @param {Function} params.onComplete - 完成回调 (result) => void, result = {output, sessionId, client}
+   * @param {Function} params.onError - 错误回调 (error) => void
+   * @returns {Promise<void>}
+   */
+  async sendTaskStreaming({ workingDir, prompt, onThinking, onMessage, onComplete, onError }) {
+    const messages = [];
+    let sessionId = null;
+
+    const client = new OpenCodeClient({
+      workingDir,
+      onEvent: (event) => {
+        console.log(`[Streaming Event] ${event.type}:`, event.content?.substring(0, 50));
+
+        if (event.type === 'thinking' && event.content && onThinking) {
+          onThinking(event.content);
+        }
+
+        if (event.type === 'message' && event.content) {
+          messages.push(event.content);
+          if (onMessage) {
+            onMessage(event.content);
+          }
+        }
+
+        if (event.sessionId && !sessionId) {
+          sessionId = event.sessionId;
+        }
+      },
+    });
+
+    try {
+      await client.connect();
+      const result = await client.sendPrompt(prompt);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const output = messages.join('') || result?.output || result?.content || '';
+      this.sessionId = sessionId || result?.sessionId;
+
+      console.log(`[ACP Streaming] 最终输出:`, output.substring(0, 100));
+
+      if (onComplete) {
+        onComplete({
+          output,
+          sessionId: this.sessionId,
+          client,
+        });
+      }
+    } catch (error) {
+      console.error(`[ACP Streaming] 错误:`, error);
+      if (onError) {
+        onError(error);
+      } else {
+        throw error;
+      }
+    }
+  }
+
   /**
    * 检查 OpenCode 是否可用
    * @returns {Promise<boolean>}
