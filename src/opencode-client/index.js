@@ -13,7 +13,9 @@ async function loadSDK() {
 class OpenCodeClient {
   constructor(options = {}) {
     this.workingDir = options.workingDir || process.cwd();
-    this.onEvent = options.onEvent || (() => {});
+    // 使用代理对象，允许动态替换处理器
+    this.eventProxy = { onEvent: options.onEvent || (() => {}) };
+    this.onEvent = this.eventProxy.onEvent;
     this.connection = null;
     this.process = null;
     this.sessionId = null;
@@ -42,7 +44,8 @@ class OpenCodeClient {
     const output = Readable.toWeb(this.process.stdout);
     const stream = ndJsonStream(input, output);
 
-    this.eventHandler = new EventHandler(this.onEvent);
+    // 使用代理对象创建 EventHandler
+    this.eventHandler = new EventHandler(this.eventProxy);
     this.connection = new ClientSideConnection(() => this.eventHandler, stream);
 
     this.process.stderr.on('data', (data) => {
@@ -86,9 +89,10 @@ class OpenCodeClient {
 
     return result;
   }
+
   setOnEvent(onEvent) {
     this.onEvent = onEvent;
-    this.eventHandler.onEvent = onEvent;
+    this.eventProxy.onEvent = onEvent;
   }
 
   disconnect() {
@@ -99,30 +103,38 @@ class OpenCodeClient {
 }
 
 class EventHandler {
-  constructor(onEvent) {
-    this.onEvent = onEvent;
+  constructor(eventProxy) {
+    this.eventProxy = eventProxy;
+  }
+  
+  // 使用 getter 动态获取当前的 onEvent
+  get onEvent() {
+    return this.eventProxy.onEvent;
   }
 
   async sessionUpdate(params) {
     const update = params.update;
     
+    // 动态获取当前的 onEvent 处理器
+    const onEvent = this.onEvent;
+    
     switch (update.sessionUpdate) {
       case 'agent_thought_chunk':
-        this.onEvent({ type: 'thinking', content: update.content?.text || '' });
+        onEvent({ type: 'thinking', content: update.content?.text || '' });
         break;
       case 'agent_message_chunk':
         if (update.content?.type === 'text') {
-          this.onEvent({ type: 'message', content: update.content.text });
+          onEvent({ type: 'message', content: update.content.text });
         }
         break;
       case 'tool_call':
-        this.onEvent({ type: 'tool_call', title: update.title, status: update.status });
+        onEvent({ type: 'tool_call', title: update.title, status: update.status });
         break;
       case 'tool_call_update':
-        this.onEvent({ type: 'tool_call_update', toolCallId: update.toolCallId, status: update.status });
+        onEvent({ type: 'tool_call_update', toolCallId: update.toolCallId, status: update.status });
         break;
       case 'plan':
-        this.onEvent({ type: 'plan', content: update.content });
+        onEvent({ type: 'plan', content: update.content });
         break;
       default:
         break;
