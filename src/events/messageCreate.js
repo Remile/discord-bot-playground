@@ -79,12 +79,10 @@ async function execute(message) {
         messages.push(event.content);
       }
       
+      
       // 不调用 originalOnEvent，避免重复发送
       // originalOnEvent 是 ACPClient 的处理器，会发送 Discord 消息
       // 我们在这里直接处理，不需要再调用原始处理器
-      if (originalOnEvent) {
-        originalOnEvent(event);
-      }
     });
     
     // 使用现有的 session 发送 prompt
